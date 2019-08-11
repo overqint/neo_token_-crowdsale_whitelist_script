@@ -29,3 +29,7 @@ $ pip install -e .
 
 to run the script:
 $ python3 whitelistEventHandler.py
+
+Script will ask for the wallet password at the beginning
+
+wallets can be configured in config/network-wallets.json
