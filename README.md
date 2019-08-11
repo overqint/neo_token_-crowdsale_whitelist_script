@@ -33,3 +33,10 @@ $ python3 whitelistEventHandler.py
 Script will ask for the wallet password at the beginning
 
 wallets can be configured in config/network-wallets.json
+
+# Troubleshooting
+
+## if you get a 
+leveldb unavailable, you may already be running this process: b'IO error: lock /root/.neopython/Chains/SC234/LOCK: Resource temporarily unavailable' error
+either np-prompt is running or you need to delete the /root/.neopython/Chains/SC234/LOCK file
+
