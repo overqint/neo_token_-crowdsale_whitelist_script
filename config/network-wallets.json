@@ -1,0 +1,11 @@
+{
+  "PRIVNET": {
+    "wallet_path": "/neo-python/neo-privnet.wallet"
+  },
+  "TESTNET": {
+    "wallet_path": "neo-testnet.wallet"
+  },
+  "MAINNET": {
+    "wallet_path": "neo-mainnet.wallet"
+  }
+}
