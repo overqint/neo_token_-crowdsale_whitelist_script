@@ -16,10 +16,12 @@ Usage:
 
 python3.5 -m venv venv
 source venv/bin/activate
+
 # bl: these only need to be done once
-#pip install -U setuptools pip wheel
-#pip install -e .
-python neo/contrib/neo-nrve-eventhandler.py
+pip install -U setuptools pip wheel
+pip install -e .
+
+python3 whitelistEventHandler.py
 
 """
 import os
