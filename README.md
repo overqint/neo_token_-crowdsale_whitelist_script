@@ -1,7 +1,7 @@
 # neo_token_crowdsale_whitelist_script
 Crowdsale whitelist handler with database
 
-How to use the script:
+## How to use the script:
 clone repository into a nep-python docker container (or environment)
 
 you need to install mariadb:
@@ -9,7 +9,7 @@ you need to install mariadb:
 apt-get install -y mariadb-server mariadb-client
 ```
 
-# MariaDB & nvm Database
+### MariaDB & nvm Database
 restart the service
 ```
 service mysql restart
