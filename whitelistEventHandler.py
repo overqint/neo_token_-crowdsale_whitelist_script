@@ -1,13 +1,4 @@
 """
-Based off of: https://github.com/CityOfZion/neo-python/blob/master/examples/smart-contract.py
-
-Example of running a NEO node and receiving notifications when events
-of a specific smart contract happen.
-
-Events include Runtime.Notify, Runtime.Log, Storage.*, Execution.Success
-and several more. See the documentation here:
-
-http://neo-python.readthedocs.io/en/latest/smartcontracts.html
 
 Usage:
 * Update config/neo-nrve-config.json params
@@ -17,7 +8,7 @@ Usage:
 python3.5 -m venv venv
 source venv/bin/activate
 
-# bl: these only need to be done once
+Only need to be done once
 pip install -U setuptools pip wheel
 pip install -e .
 
@@ -38,30 +29,34 @@ from main import BlockchainMain, NetworkType
 
 import pymysql.cursors
 from pymysql import MySQLError
-import pprint
 
-
+# WhitelistEventHandler that is extending the BlockchainMain class
 class WhitelistEventHandler(BlockchainMain):
     smart_contract_hash = None
 
     # Setup the smart contract instance
     smart_contract = None
 
+    # load database configuration
     db_config = None
 
-    ignore_blocks_older_than = None
-
+    # will be set to True if the wallets needs a recovery
     wallet_needs_recovery = False
 
+    # neo addresses array that will be whitelisted
     whitelists_to_process = []
 
+    # store the last transaction hash
     whitelist_tx_processing = None
 
-    wait_whitelist_tx_processing_seconds = 5
+    # wait X seconds for transaction to be persisted on the blockchain
+    wait_whitelist_tx_processing_seconds = None
 
-    wait_load_addresses_to_whitelist_seconds = 5
+    # in X seconds process the next batch of addresses
+    wait_load_addresses_to_whitelist_seconds = None
 
-    addresses_to_whitelist_count = 6
+    # address count that will be processed in one transaction
+    addresses_to_whitelist_count = None
 
     def __init__(self):
 
@@ -81,30 +76,39 @@ class WhitelistEventHandler(BlockchainMain):
         self.smart_contract_hash = config['smart_contract']
         self.smart_contract = SmartContract(self.smart_contract_hash)
 
-        self.ignore_blocks_older_than = config['ignore_blocks_older_than']
-
         self.wait_whitelist_tx_processing_seconds = config['wait_whitelist_tx_processing_seconds']
         self.wait_load_addresses_to_whitelist_seconds = config['wait_load_addresses_to_whitelist_seconds']
 
         self.addresses_to_whitelist_count = config['addresses_to_whitelist_count']
 
-        # if not disable_auto_whitelist:
-        #     self.setup_wallet(network_wallets_config[config['network']]['wallet_path'])
-        # else:
-        #     self.setup_network()
-
         self.setup_wallet(network_wallets_config[config['network']]['wallet_path'])
 
+    """
+    infinite loop that reads constantly from the database the addresses that need to be whitelisted
+    and sends them to the smart contract
+    
+    on every loop it sleeps for 1 second and increments its counter
+    
+    other logic in the loop works with the modulo operator 
+    and can determine on what mod seconds it wants to trigger certain operations like 
+    - waiting for the transaction
+    - loading neo addresses to be whitelisted
+    
+    if there are no neo addresses to be whitelisted the loop skips the processes that come after this check
+    
+    if the smart contract is invoked successfully neo addresses in the database are marked as whitelisted
+    
+    else it tries to rebuild the wallet, selects from the database addresses that are not whitelisted and resumes the whitelisting process
 
-
+    """
     def whitelist_addresses(self):
         self.logger.info("whitelist_addresses...")
         count = 0
         while True:
-            sleep(3)
-
+            sleep(1)
             count += 1
 
+            # every 2 seconds print the block hight
             if (count % 2) == 0:
                 self.logger.info("Block %s / %s", str(Blockchain.Default().Height),
                                  str(Blockchain.Default().HeaderHeight))
@@ -128,10 +132,13 @@ class WhitelistEventHandler(BlockchainMain):
             if not self.whitelists_to_process:
                 continue
 
+            # if the wallet is out of sync on the testnet or mainnet it could take a really long time to sync it
             if self.wallet_needs_recovery:
+                self.logger.debug('recovering wallet...')
                 self.recover_wallet()
                 self.wallet_needs_recovery = False
             else:
+                self.logger.debug('syncing wallet...')
                 self.wallet_sync()
 
             addresses_to_whitelist = self.whitelists_to_process[0:self.addresses_to_whitelist_count]
@@ -141,14 +148,13 @@ class WhitelistEventHandler(BlockchainMain):
             result, result_string = self.test_invoke(
                 [self.smart_contract_hash, 'crowdsale_register', addresses_to_whitelist],
                 len(addresses_to_whitelist), False)
-            self.logger.debug('whitelisting addresses result raw: %s', result)
-            self.logger.debug('whitelisting addresses result string: %s', result_string)
+            self.logger.debug('smart contract invoked; whitelisting addresses result raw: %s', result)
+            self.logger.debug('smart contract invoked; whitelisting addresses result as string: %s', result_string)
 
             if not result_string:
-                self.logger.info("transaction result empty, recover wallet and try again")
+                self.logger.info("transaction result empty,  wallet could be out of sync recover it and try again")
                 self.wallet_needs_recovery = True
-                # we need to try to process this refund again, so add it back in to the list
-                # self.whitelists_to_process = addresses_to_whitelist + self.whitelists_to_process
+
             elif result_string and result:
                 self.logger.info("transaction relayed")
                 self.whitelist_tx_processing = result.Hash
@@ -156,6 +162,7 @@ class WhitelistEventHandler(BlockchainMain):
                 self.mark_address_as_whitelisted(addresses_to_whitelist)
                 # self.check_whitelisted_address(addresses_to_whitelist)
 
+    # connection to the mysql/mariadb server
     def get_connection(self):
         # Connect to the database
         return pymysql.connect(host=self.db_config['host'],
@@ -165,6 +172,7 @@ class WhitelistEventHandler(BlockchainMain):
                                charset='utf8mb4',
                                cursorclass=pymysql.cursors.DictCursor)
 
+    # check the crowdsale status of the given addresses
     def check_whitelisted_address(self, addresses_to_whitelist):
         if addresses_to_whitelist:
             result, result_string = self.test_invoke(
@@ -174,6 +182,7 @@ class WhitelistEventHandler(BlockchainMain):
         else:
             self.logger.error('no addresses to mark as whitelisted in the DB supplied')
 
+    # connect to the database and load the addresses from NvmUser table that are not marked as whitelisted
     def load_addresses_to_whitelist(self):
         connection = self.get_connection()
         try:
@@ -194,13 +203,15 @@ class WhitelistEventHandler(BlockchainMain):
         finally:
             connection.close()
 
+    # connect to the database and mark the neo addresses as whitelisted in the NvmUser table
     def mark_address_as_whitelisted(self, addresses_to_whitelist):
         if addresses_to_whitelist:
             # addresses_to_whitelist_quoted_string = ', '.join('[("{0}")]'.format(w) for w in addresses_to_whitelist)
             connection = self.get_connection()
             try:
                 with connection.cursor() as cursor:
-                    cursor.executemany("UPDATE NvmUser SET crowdsale_register = 1 WHERE neo_address = %s ", addresses_to_whitelist)
+                    cursor.executemany("UPDATE NvmUser SET crowdsale_register = 1 WHERE neo_address = %s ",
+                                       addresses_to_whitelist)
                     connection.commit()
                     self.logger.debug('last executed query for whitelisting: %s', str(cursor._last_executed));
                     self.logger.debug('DB rows updated: %s', str(cursor.rowcount));
@@ -211,16 +222,8 @@ class WhitelistEventHandler(BlockchainMain):
         else:
             self.logger.error('no addresses to mark as whitelisted supplied')
 
+
 def main():
-    # parser = argparse.ArgumentParser()
-    #
-    # parser.add_argument("--disable-auto-whitelist", action="store_true", default=False,
-    #                     help="Option to disable auto-whitelisting")
-    #
-    # args = parser.parse_args()
-
-    # event_handler = TokenSaleEventHandler(args.disable_auto_whitelist)
-
     event_handler = WhitelistEventHandler()
     event_handler.run()
 
