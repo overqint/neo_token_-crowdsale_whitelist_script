@@ -1,4 +1,5 @@
 """
+Based on https://github.com/NarrativeCompany/tokensale-neo-smartcontract/blob/master/util/neo-nrve-eventhandler.py
 
 Usage:
 * Update config/neo-nrve-config.json params

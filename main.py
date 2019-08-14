@@ -1,3 +1,8 @@
+"""
+Script From https://github.com/NarrativeCompany/tokensale-neo-smartcontract/blob/master/util/blockchain/main.py
+
+"""
+
 import os
 import threading
 from time import sleep
