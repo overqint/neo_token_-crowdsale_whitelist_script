@@ -18,11 +18,14 @@ start mysql/mariadb shell
 ```
 mysql
 ```
-create database & user:
+create database & user; grant access:
 ```
 create database nvm;
 CREATE USER 'nvmuser'@'localhost' IDENTIFIED BY 'nvmnvmnvmnvm';
+GRANT ALL PRIVILEGES ON *.* TO 'nvmuser'@'localhost';
+
 ```
+
 create the table for whitelisting addresses
 ```
 CREATE TABLE `NvmUser` (
