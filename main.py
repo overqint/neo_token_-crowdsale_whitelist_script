@@ -1,5 +1,5 @@
 """
-Script From https://github.com/NarrativeCompany/tokensale-neo-smartcontract/blob/master/util/blockchain/main.py
+Based on https://github.com/NarrativeCompany/tokensale-neo-smartcontract/blob/master/util/blockchain/main.py
 
 """
 
@@ -116,9 +116,9 @@ class BlockchainMain:
         self.wallet_path = wallet_path
         self.syncd_wallet_path = wallet_path + ".syncd"
 
-        if not os.path.exists(self.syncd_wallet_path):
-            self.logger.info("Creating syncd copy of wallet file...")
-            copyfile(self.wallet_path, self.syncd_wallet_path)
+        #always create a new synced wallet that will be used
+        self.logger.info("Creating syncd copy of wallet file...")
+        copyfile(self.wallet_path, self.syncd_wallet_path)
 
         wallet_passwd = prompt("[password]> ", is_password=True)
         self.wallet_passwd_key = to_aes_key(wallet_passwd)
@@ -165,6 +165,14 @@ class BlockchainMain:
         self.wallet_open()
         self.wallet_sync()
         self.logger.warn("wallet recovered!")
+
+    # create a backup of the wallet <NAME>.synced
+    def copy_wallet(self):
+        self.logger.warn("copying wallet ...")
+        if not os.path.exists(self.wallet_path):
+            raise EnvironmentError("Could not find file %s" % self.syncd_wallet_path)
+        self.wallet_close()
+        copyfile(self.wallet_path, self.syncd_wallet_path)
 
     def wait_for_peers(self):
         while len(NodeLeader.Instance().Peers) == 0:

@@ -56,7 +56,8 @@ class WhitelistEventHandler(BlockchainMain):
     # in X seconds process the next batch of addresses
     wait_load_addresses_to_whitelist_seconds = None
 
-    # address count that will be processed in one transaction
+    # address count that will be processed in one transaction,
+    # this should be a maximum of six to stay below the 10 GAS fee
     addresses_to_whitelist_count = None
 
     def __init__(self):
@@ -134,13 +135,18 @@ class WhitelistEventHandler(BlockchainMain):
                 continue
 
             # if the wallet is out of sync on the testnet or mainnet it could take a really long time to sync it
-            if self.wallet_needs_recovery:
-                self.logger.debug('recovering wallet...')
-                self.recover_wallet()
-                self.wallet_needs_recovery = False
+            if not count == 1:
+                if self.wallet_needs_recovery:
+                    self.logger.debug('recovering wallet...')
+                    self.recover_wallet()
+                    self.wallet_needs_recovery = False
+                else:
+                    self.logger.debug('syncing wallet...')
+                    self.wallet_sync()
             else:
                 self.logger.debug('syncing wallet...')
                 self.wallet_sync()
+                self.copy_wallet()
 
             addresses_to_whitelist = self.whitelists_to_process[0:self.addresses_to_whitelist_count]
             self.whitelists_to_process = self.whitelists_to_process[self.addresses_to_whitelist_count:]
