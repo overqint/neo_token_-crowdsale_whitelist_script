@@ -31,6 +31,7 @@ from main import BlockchainMain, NetworkType
 import pymysql.cursors
 from pymysql import MySQLError
 
+
 # WhitelistEventHandler that is extending the BlockchainMain class
 class WhitelistEventHandler(BlockchainMain):
     smart_contract_hash = None
@@ -103,9 +104,11 @@ class WhitelistEventHandler(BlockchainMain):
     else it tries to rebuild the wallet, selects from the database addresses that are not whitelisted and resumes the whitelisting process
 
     """
+
     def whitelist_addresses(self):
-        self.logger.info("whitelist_addresses...")
+        self.logger.info("function: whitelist_addresses...")
         count = 0
+        blockchain_last_height = 0
         while True:
             sleep(1)
             count += 1
@@ -115,11 +118,21 @@ class WhitelistEventHandler(BlockchainMain):
                 self.logger.info("Block %s / %s", str(Blockchain.Default().Height),
                                  str(Blockchain.Default().HeaderHeight))
 
+
+            blockchain_current_height = Blockchain.Default().Height
+
+            if blockchain_current_height == blockchain_last_height:
+                self.logger.debug('Block height did not change continue. Current height: %s, Last height: %s', blockchain_current_height, blockchain_last_height)
+                sleep(1)
+                continue
+            blockchain_last_height = blockchain_current_height
+
             # keep waiting until the last whitelist transaction comes through for X (see neo-nrve-config.json) seconds,
             # then set whitelist_tx_processing to None so the process can continue
             if self.whitelist_tx_processing:
                 if (count % self.wait_whitelist_tx_processing_seconds) != 0:
                     self.whitelist_tx_processing = None
+
                 self.logger.debug('whitelist tx processing: %s', self.whitelist_tx_processing)
                 continue
 
@@ -131,8 +144,8 @@ class WhitelistEventHandler(BlockchainMain):
                 self.load_addresses_to_whitelist()
 
             # no whitelists to process? then keep waiting
-            if not self.whitelists_to_process:
-                continue
+            # if not self.whitelists_to_process:
+            #     continue
 
             # if the wallet is out of sync on the testnet or mainnet it could take a really long time to sync it
             if not count == 1:
@@ -143,7 +156,7 @@ class WhitelistEventHandler(BlockchainMain):
                 else:
                     self.logger.debug('syncing wallet...')
                     self.wallet_sync()
-            else:
+            else:  # if its the first time the script is running, first sync the wallet then copy it to <WALLET_NAME>.synced
                 self.logger.debug('syncing wallet...')
                 self.wallet_sync()
                 self.copy_wallet()
@@ -151,26 +164,32 @@ class WhitelistEventHandler(BlockchainMain):
             addresses_to_whitelist = self.whitelists_to_process[0:self.addresses_to_whitelist_count]
             self.whitelists_to_process = self.whitelists_to_process[self.addresses_to_whitelist_count:]
 
+            self.whitelists_to_process = addresses_to_whitelist
+            self.check_whitelisted_address(addresses_to_whitelist)
+
             self.logger.debug('trying to whitelist addresses: %s', addresses_to_whitelist)
-            result, result_string = self.test_invoke(
+            result, result_boolean = self.test_invoke(
                 [self.smart_contract_hash, 'crowdsale_register', addresses_to_whitelist],
                 len(addresses_to_whitelist), False)
             self.logger.debug('smart contract invoked; whitelisting addresses result raw: %s', result)
-            self.logger.debug('smart contract invoked; whitelisting addresses result as string: %s', result_string)
+            self.logger.debug('smart contract invoked; whitelisting addresses result as string: %s', result_boolean)
 
-            if not result_string:
+            if result_boolean:
+                self.logger.info("transaction relayed")
+                self.whitelist_tx_processing = result.Hash
+                # TODO was intended for checking if the whitelisting of addresses was successful before they marked
+                #  as whitelisted in the database; consumes too much GAS (??) should be solved in a separate
+                #  thread/functionality of this script: for example checking whitelisted addresses in the database as
+                #  a bulk operation... not not attached to the actual whitelisting process
+                # self.check_whitelisted_address(addresses_to_whitelist)
+                self.mark_address_as_whitelisted(addresses_to_whitelist)
+            else:
                 self.logger.info("transaction result empty,  wallet could be out of sync recover it and try again")
                 self.wallet_needs_recovery = True
 
-            elif result_string and result:
-                self.logger.info("transaction relayed")
-                self.whitelist_tx_processing = result.Hash
-                self.logger.debug('successfully whitelisted addresses: %s', addresses_to_whitelist)
-                self.mark_address_as_whitelisted(addresses_to_whitelist)
-                # self.check_whitelisted_address(addresses_to_whitelist)
-
     # connection to the mysql/mariadb server
     def get_connection(self):
+        self.logger.debug('function: get DB connection...')
         # Connect to the database
         return pymysql.connect(host=self.db_config['host'],
                                user=self.db_config['user'],
@@ -181,21 +200,33 @@ class WhitelistEventHandler(BlockchainMain):
 
     # check the crowdsale status of the given addresses
     def check_whitelisted_address(self, addresses_to_whitelist):
+        self.logger.debug('function: check whitelisted addresses...')
         if addresses_to_whitelist:
-            result, result_string = self.test_invoke(
-                [self.smart_contract_hash, 'crowdsale_status', addresses_to_whitelist],
-                len(addresses_to_whitelist), False)
-            self.logger.debug('check whitelisted address result: %s', result_string)
+            for address in addresses_to_whitelist:
+                address_as_list = [address]
+                result, result_as_boolean = self.test_invoke(
+                    [self.smart_contract_hash, 'crowdsale_status', address_as_list],
+                    len(addresses_to_whitelist), False)
+                # sleep for 3 seconds, transaction should have benn relayed during that
+                sleep(3)
+                self.logger.debug('check whitelisted address result: %s', result)
+                self.logger.debug('check whitelisted address result as string: %s', result_as_boolean)
+                # TODO return statment stops the loop, find antoher solution
+                # if result_as_boolean:
+                #     return True
+                # else:
+                #     return False
         else:
-            self.logger.error('no addresses to mark as whitelisted in the DB supplied')
+            self.logger.info('no addresses to mark as whitelisted in the DB supplied')
 
     # connect to the database and load the addresses from NvmUser table that are not marked as whitelisted
     def load_addresses_to_whitelist(self):
+        self.logger.debug('function: load addresses to whitelist...')
         connection = self.get_connection()
         try:
             with connection.cursor() as cursor:
                 sql = "select neo_address FROM NvmUser WHERE crowdsale_register = 0 LIMIT %s ;"
-                args = (self.addresses_to_whitelist_count)
+                args = self.addresses_to_whitelist_count
                 cursor.execute(sql, args)
 
                 rows = cursor.fetchall()
@@ -212,6 +243,7 @@ class WhitelistEventHandler(BlockchainMain):
 
     # connect to the database and mark the neo addresses as whitelisted in the NvmUser table
     def mark_address_as_whitelisted(self, addresses_to_whitelist):
+        self.logger.debug('function: mark addreses as whitelisted...')
         if addresses_to_whitelist:
             # addresses_to_whitelist_quoted_string = ', '.join('[("{0}")]'.format(w) for w in addresses_to_whitelist)
             connection = self.get_connection()
@@ -222,6 +254,7 @@ class WhitelistEventHandler(BlockchainMain):
                     connection.commit()
                     self.logger.debug('last executed query for whitelisting: %s', str(cursor._last_executed));
                     self.logger.debug('DB rows updated: %s', str(cursor.rowcount));
+                    self.logger.debug('successfully whitelisted addresses: %s', addresses_to_whitelist)
             except MySQLError as e:
                 self.logger.error('ERROR: updating whitelist address: {!r}, errno is {}'.format(e, e.args[0]))
             finally:

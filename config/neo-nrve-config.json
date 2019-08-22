@@ -1,6 +1,6 @@
 {
   "network" : "TESTNET",
-  "smart_contract" : "0xeaee61d0abf221df973745e58a2e40533592905a",
+  "smart_contract" : "",
   "wait_whitelist_tx_processing_seconds" : 5,
   "wait_load_addresses_to_whitelist_seconds" : 5,
   "addresses_to_whitelist_count" : 2

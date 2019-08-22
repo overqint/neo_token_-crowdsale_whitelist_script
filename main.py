@@ -116,7 +116,7 @@ class BlockchainMain:
         self.wallet_path = wallet_path
         self.syncd_wallet_path = wallet_path + ".syncd"
 
-        #always create a new synced wallet that will be used
+        # always create a new synced wallet that will be used
         self.logger.info("Creating syncd copy of wallet file...")
         copyfile(self.wallet_path, self.syncd_wallet_path)
 
@@ -181,22 +181,24 @@ class BlockchainMain:
 
     def test_invoke(self, args, expected_result_count, test_only=False, from_addr=None):
         if args and len(args) > 0:
-            tx, fee, results, num_ops, success = TestInvokeContract(self.wallet, args, from_addr=from_addr)
+            tx, fee, test_invoke_results, num_ops, success = TestInvokeContract(self.wallet, args, from_addr=from_addr)
 
-            if tx is not None and results is not None and success:
+            if tx is not None and test_invoke_results is not None and success:
+                result_not_as_object = [str(item) for item in test_invoke_results]
                 print(
                     "\n-------------------------------------------------------------------------------------------------------------------------------------")
                 print("Test invoke successful")
                 print("Total operations: %s" % num_ops)
-                print("Results RAW %s" % results)
-                print("Results %s" % [str(item) for item in results])
+                print("Results RAW %s" % test_invoke_results)
+                print("Results %s" % result_not_as_object)
                 print("Invoke TX GAS cost: %s" % (tx.Gas.value / Fixed8.D))
                 print("Invoke TX fee: %s" % (fee.value / Fixed8.D))
                 print(
                     "-------------------------------------------------------------------------------------------------------------------------------------\n")
 
-                if results[0].GetBigInteger() != expected_result_count:
-                    self.logger.error("Found invalid result! '%s' but expected '%s'" % (results[0], expected_result_count))
+                if test_invoke_results[0].GetBigInteger() != expected_result_count:
+                    self.logger.error("Something went wrong? Result count: '%s' not matching expected '%s'" % (
+                    test_invoke_results[0], expected_result_count))
 
                 if test_only:
                     return True, True
@@ -204,7 +206,32 @@ class BlockchainMain:
                 # bl: tx can fail if there are no connected peers, so wait for one
                 self.wait_for_peers()
 
-                return InvokeContract(self.wallet, tx, fee, from_addr), results[0]
+                final_result_of_testinvoke = None
+                # try:
+                if result_not_as_object[0]:
+                    if result_not_as_object[0].isdigit():
+                        final_result_of_testinvoke = result_not_as_object
+                    # except AttributeError:
+                    #         print("Not a digit")
+                    else:
+                        try:
+                            as_byte_array = bytearray(result_not_as_object[0], 'utf-8')
+                            # test if it's a byte array
+                            as_byte_array.decode()
+                            result_as_integer = int.from_bytes(as_byte_array, byteorder='big')
+                            if result_as_integer == 1:
+                                final_result_of_testinvoke = True
+                            else:
+                                final_result_of_testinvoke = False
+
+                        except AttributeError:
+                            print("Not a byte array")
+
+                invoke_contract_result = InvokeContract(self.wallet, tx, fee, from_addr)
+                if invoke_contract_result:
+                    return invoke_contract_result, final_result_of_testinvoke
+                else:
+                    return False, False
             else:
                 print("Error testing contract invoke: %s" % args)
         else:

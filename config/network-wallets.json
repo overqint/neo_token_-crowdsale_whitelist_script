@@ -1,6 +1,6 @@
 {
   "PRIVNET": {
-    "wallet_path": "/neo-python/neo-privnet.wallet"
+    "wallet_path": "neo-privnet.wallet"
   },
   "TESTNET": {
     "wallet_path": "neo-testnet.wallet"
