@@ -61,7 +61,9 @@ class WhitelistEventHandler(BlockchainMain):
     # this should be a maximum of six to stay below the 10 GAS fee
     addresses_to_whitelist_count = None
 
-    def __init__(self):
+    def __init__(self, ffidb):
+
+
 
         with open(os.path.join(os.path.abspath(os.path.dirname(__file__)), 'config', 'neo-nrve-config.json'),
                   'r') as f:
@@ -75,6 +77,11 @@ class WhitelistEventHandler(BlockchainMain):
             self.db_config = json.load(f)
 
         super().__init__(NetworkType[config['network']], 'neo-nrve-eventhandler')
+
+        if ffidb is not None:
+            self.logger.info("ffidb has been set (value is %s)", ffidb)
+            self.from_file_into_db(ffidb)
+        exit()
 
         self.smart_contract_hash = config['smart_contract']
         self.smart_contract = SmartContract(self.smart_contract_hash)
@@ -262,9 +269,68 @@ class WhitelistEventHandler(BlockchainMain):
         else:
             self.logger.error('no addresses to mark as whitelisted supplied')
 
+    """
+    wrapper method that checks if the addresses are not empty and calls the necessary methods to write the 
+    addresses into the database
+    
+    :param filepath: 
+    """
+    def from_file_into_db(self, filepath):
+
+        addresses = self.read_from_file(filepath)
+        if addresses:
+            self.write_addresses_into_db(addresses)
+        else:
+            self.logger.error('given file was empty or could not be read')
+
+    """
+    writes the given addresses list into the DB
+    
+    :param addresses: 
+    """
+    def write_addresses_into_db(self, addresses):
+
+        self.logger.debug('function: write_addresses_into_db...')
+        connection = self.get_connection()
+        try:
+            with connection.cursor() as cursor:
+                sql = "insert into NvmUser (neo_address) VALUES (%s);"
+                cursor.executemany(sql, addresses)
+                connection.commit()
+                self.logger.debug('last executed query to insert addresses into the DB: %s', str(cursor._last_executed));
+                print(cursor.rowcount, "record(s) inserted successfully into NvmUser table")
+        except MySQLError as e:
+            self.logger.error('ERROR: selecting whitelist addresses: {!r}, errno is {}'.format(e, e.args[0]))
+        finally:
+            connection.close()
+
+    """
+    read from text (csv) file format described here:
+    https://github.com/overqint/neo_token_crowdsale_whitelist_script/issues/2
+
+    :param filepath: 
+    :return: 
+    """
+    def read_from_file(self, filepath):
+
+        addresses = []
+        with open(filepath) as fp:
+            # skip the first line
+            next(fp)
+            for cnt, line in enumerate(fp):
+                # remove end of line characters and the comma, if it exists
+                line_for_sql = line.rstrip().rstrip(',')
+                addresses.append(line_for_sql)
+        print(addresses);
+        return addresses
 
 def main():
-    event_handler = WhitelistEventHandler()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-ffidb", help="Option to add addresses from file into the DB")
+
+    args = parser.parse_args()
+    event_handler = WhitelistEventHandler(args.ffidb)
     event_handler.run()
 
 
