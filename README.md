@@ -61,3 +61,12 @@ wallets can be configured in config/network-wallets.json
 leveldb unavailable, you may already be running this process: b'IO error: lock /root/.neopython/Chains/SC234/LOCK: Resource temporarily unavailable' error
 either np-prompt is running or you need to delete the /root/.neopython/Chains/SC234/LOCK file
 
+## if you get a
+ERROR: File "setup.py" not found. Directory cannot be installed in editable mode: /DIRECTORY/neo_token_crowdsale_whitelist_script
+
+install the requirements manually; example:
+```
+pip3 install PyMySQL
+```
+
+
